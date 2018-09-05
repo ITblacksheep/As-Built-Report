@@ -416,7 +416,7 @@ function Get-ScsiDeviceDetail {
 #---------------------------------------------------------------------------------------------#
 #                                         SCRIPT BODY                                         #
 #---------------------------------------------------------------------------------------------#
-
+$sw = [system.diagnostics.stopwatch]::StartNew()
 # Connect to vCenter Server using supplied credentials
 foreach ($VIServer in $Target) {
     #region vCenter Server Section
@@ -424,21 +424,17 @@ foreach ($VIServer in $Target) {
     
     # Create a lookup hashtable to quickly link VM MoRefs to Names
     # Exclude VMware Site Recovery Manager placeholder VMs
-    $VMs = Get-VM -Server $vCenter | Where-Object {
-        $_.ExtensionData.Config.ManagedBy.ExtensionKey -notlike 'com.vmware.vcDr*'
-    } | Sort-Object Name
-    $VMLookup = @{}
-    foreach ($VM in $VMs) {
-        $VMLookup.($VM.Id) = $VM.Name
-    }
-
+    "Pre-VM Lookup,$($sw.ElapsedMilliseconds)" | out-file -Append -FilePath "$PSScriptRoot\timing.csv"
+    $VMLookup = (Get-VM -Server $vCenter).where({$_.ExtensionData.Config.ManagedBy.ExtensionKey -notlike 'com.vmware.vcDr*'}) | Select-Object @{"Name"="$($_.Id)";"Expression"={$_.Name}}
+    "VMLookup,$($sw.ElapsedMilliseconds)" | out-file -Append -FilePath "$PSScriptRoot\timing.csv"
     # Create a lookup hashtable to quickly link Host MoRefs to Names
+    "Pre-Host Lookup Table,$($sw.ElapsedMilliseconds)" | out-file -Append -FilePath "$PSScriptRoot\timing.csv"
     $VMHosts = Get-VMHost -Server $vCenter | Sort-Object Name
     $VMHostLookup = @{}
     foreach ($VMHost in $VMHosts) {
         $VMHostLookup.($VMHost.Id) = $VMHost.Name
     }
-
+    "Host Lookup Table,$($sw.ElapsedMilliseconds)" | out-file -Append -FilePath "$PSScriptRoot\timing.csv"
     $VCAdvSettings = Get-AdvancedSetting -Entity $vCenter
     $VCServerFQDN = ($VCAdvSettings | Where-Object {$_.name -eq 'VirtualCenter.FQDN'}).Value
     $VCAdvSettingsHash = @{
@@ -454,6 +450,7 @@ foreach ($VIServer in $Target) {
         PasswordExpiry = ($VCAdvSettings | Where-Object {$_.name -eq 'VirtualCenter.VimPasswordExpirationInDays'}).Value
         PlatformServicesController = ($VCAdvSettings | Where-Object {$_.name -eq 'config.vpxd.sso.admin.uri'}).Value
     }
+    "VMware Settings,$($sw.ElapsedMilliseconds)" | out-file -FilePath "$PSScriptRoot\timing.csv" -Append
     Section -Style Heading1 $VCServerFQDN {
         if ($InfoLevel.vCenter -ge 1) {
             Section -Style Heading2 'vCenter Server' { 
@@ -593,7 +590,7 @@ foreach ($VIServer in $Target) {
             PageBreak
         }
         #endregion vCenter Server Section
-
+        
         #region Cluster Section
         if ($InfoLevel.Cluster -ge 1) {
             $Script:Clusters = Get-Cluster -Server $vCenter | Sort-Object Name
